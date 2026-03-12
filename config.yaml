@@ -1,0 +1,70 @@
+# cuerposonoro-jetson configuration
+# All tunable parameters live here. No magic numbers in code.
+
+vision:
+  model: "yolov8n-pose"
+  confidence_threshold: 0.5
+  input_size: 640
+
+silence:
+  velocity_threshold: 0.02
+  timeout_ms: 500
+
+melody:
+  channel: 0           # MIDI channel 0 (displayed as ch1)
+  program: 11          # vibraphone (GM program 11)
+  note_min: 48         # C3
+  note_max: 84         # C6
+  velocity_min: 30
+  velocity_max: 120
+  trigger_threshold: 0.03
+  brightness_cc: 74
+
+bass:
+  channel: 1           # MIDI channel 1 (displayed as ch2)
+  program: 32          # acoustic bass (GM program 32)
+  trigger_threshold: 0.03
+  velocity: 100
+
+harmony:
+  torso_tilt_threshold: 0.05
+  head_tilt_threshold: 0.04
+  chord_progression:
+    - name: "Dm9"
+      root: 62          # D
+      notes: [62, 65, 69, 72, 76]       # D F A C E
+      simplified: [62, 65, 69]           # Dm triad
+      tension: [62, 65, 69, 72, 76, 77] # Dm11 (add G)
+    - name: "G13sus4"
+      root: 67          # G
+      notes: [67, 72, 74, 76, 81]       # G C D E A
+      simplified: [67, 72, 74]           # Gsus4
+      tension: [67, 72, 74, 76, 81, 83] # G13sus4 + B
+    - name: "Cmaj7#11"
+      root: 60          # C
+      notes: [60, 64, 67, 71, 78]       # C E G B F#
+      simplified: [60, 64, 67, 71]      # Cmaj7
+      tension: [60, 64, 67, 71, 74, 78] # Cmaj13#11 (add D)
+    - name: "Fmaj9"
+      root: 65          # F
+      notes: [65, 69, 72, 76, 79]       # F A C E G
+      simplified: [65, 69, 72]           # F triad
+      tension: [65, 69, 72, 76, 79, 82] # Fmaj9#11 (add B)
+    - name: "Bø7"
+      root: 71          # B
+      notes: [71, 74, 77, 81]           # B D F A
+      simplified: [71, 74, 77]          # Bdim triad
+      tension: [71, 74, 77, 81, 84]    # Bø9 (add C#)
+    - name: "E7alt"
+      root: 64          # E
+      notes: [64, 68, 70, 75, 78]       # E G# Bb Eb F#
+      simplified: [64, 68, 71]           # E major triad
+      tension: [64, 68, 70, 73, 75, 78] # E7alt + b9 (add F)
+
+fluidsynth:
+  soundfont: "JJazzLab-SoundFont.sf2"
+  gain: 0.8
+  sample_rate: 44100
+
+midi:
+  port_name: "cuerposonoro"

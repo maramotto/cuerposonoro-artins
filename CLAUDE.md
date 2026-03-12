@@ -223,3 +223,51 @@ and a recommendation with justification. Then wait for confirmation.
 1. `DESIGN.md` — full artistic and technical rationale
 2. `config.yaml` — current parameter values
 3. Any file you are about to modify
+
+
+PROPOSED PLAN BY CLAUDE CODE:
+
+  Before starting implementation, here's the plan I propose. Per TDD rules, I'll build bottom-up, starting with pure-logic modules that have no I/O dependencies:
+
+  Phase 1 — Foundation (no hardware, no I/O)
+  1. config.yaml — all tunable parameters
+  2. audio/chords.py — chord voicings, note selection (pure music theory)
+  3. vision/landmarks.py — landmark normalization (pure math)
+
+  Phase 2 — Feature extraction (pure math)
+  4. features/arms.py — melody descriptors
+  5. features/legs.py — rhythm descriptors
+  6. features/harmony.py — torso/head tilt → chord progression
+
+  Phase 3 — I/O boundaries
+  7. audio/midi.py — MIDI note/CC output
+  8. audio/fluidsynth.py — Fluidsynth process management
+  9. vision/detector.py — YOLOv8-Pose wrapper
+
+  Phase 4 — Integration
+  10. main.py — entry point wiring everything together
+  11. deployment/ — systemd unit, setup script
+  12. README.md
+
+  Each step follows Red → Green → Refactor: test file first, then implementation.
+
+  Before I start, I need your confirmation on dependencies for requirements.txt:
+
+  ┌───────────────┬─────────────────────────────────────────────────────────┐
+  │    Package    │                         Purpose                         │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ ultralytics   │ YOLOv8-Pose inference                                   │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ pyfluidsynth  │ Fluidsynth Python bindings                              │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ python-rtmidi │ MIDI output (cross-platform, works on Mac dev + Jetson) │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ pyyaml        │ config.yaml parsing                                     │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ numpy         │ Landmark math, velocity calculations                    │
+  ├───────────────┼─────────────────────────────────────────────────────────┤
+  │ pytest        │ Testing                                                 │
+  └───────────────┴─────────────────────────────────────────────────────────┘
+
+  Alternative for MIDI: mido 
+  

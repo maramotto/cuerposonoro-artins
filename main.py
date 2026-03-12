@@ -1,0 +1,235 @@
+"""cuerposonoro-jetson: body movement → real-time sound.
+
+Entry point. Reads config, initialises all components, runs the main loop.
+"""
+from __future__ import annotations
+
+import logging
+import signal
+import sys
+import time
+
+import cv2
+import mido
+import numpy as np
+import yaml
+
+from audio.chords import ChordProgression
+from audio.fluidsynth import FluidsynthManager
+from audio.midi import MidiOut
+from features.arms import ArmFeatures
+from features.harmony import HarmonyFeatures
+from features.legs import LegFeatures
+from vision.detector import PoseDetector
+from vision.landmarks import Landmarks
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger("cuerposonoro")
+
+
+class SilenceTracker:
+    """Track whether body is still enough to trigger silence."""
+
+    def __init__(self, threshold: float, timeout_ms: int) -> None:
+        self._threshold = threshold
+        self._timeout_s = timeout_ms / 1000.0
+        self._still_since: float | None = None
+
+    def update(self, velocity: float) -> bool:
+        """Return True if sound should be silent."""
+        if velocity < self._threshold:
+            if self._still_since is None:
+                self._still_since = time.monotonic()
+            return (time.monotonic() - self._still_since) >= self._timeout_s
+        else:
+            self._still_since = None
+            return False
+
+
+def load_config(path: str = "config.yaml") -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def run(config: dict) -> None:
+    # Vision
+    detector = PoseDetector(
+        model_path=config["vision"]["model"],
+        confidence=config["vision"]["confidence_threshold"],
+    )
+
+    # Audio
+    fluidsynth = FluidsynthManager(
+        soundfont=config["fluidsynth"]["soundfont"],
+        gain=config["fluidsynth"]["gain"],
+        sample_rate=config["fluidsynth"]["sample_rate"],
+    )
+    fluidsynth.start()
+    log.info("Fluidsynth started")
+
+    # Wait for Fluidsynth to initialise its ALSA port
+    time.sleep(1)
+
+    port = mido.open_output(config["midi"]["port_name"], virtual=True)
+    midi = MidiOut(port)
+    log.info("MIDI port '%s' opened", config["midi"]["port_name"])
+
+    # Set programs
+    mel_cfg = config["melody"]
+    bass_cfg = config["bass"]
+    midi.program_change(channel=mel_cfg["channel"], program=mel_cfg["program"])
+    midi.program_change(channel=bass_cfg["channel"], program=bass_cfg["program"])
+
+    # Harmony
+    progression = ChordProgression.from_config(config["harmony"]["chord_progression"])
+    harm_cfg = config["harmony"]
+
+    # Silence
+    silence_tracker = SilenceTracker(
+        threshold=config["silence"]["velocity_threshold"],
+        timeout_ms=config["silence"]["timeout_ms"],
+    )
+
+    # Camera
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        log.error("Cannot open camera")
+        sys.exit(1)
+    log.info("Camera opened")
+
+    # Per-person state
+    person_landmarks: dict[int, Landmarks] = {}
+    active_melody_notes: dict[int, int] = {}
+    active_bass_notes: dict[int, int] = {}
+
+    running = True
+
+    def on_signal(signum, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    log.info("Main loop started — chord: %s", progression.current.name)
+
+    try:
+        while running:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            detections = detector.detect(frame)
+
+            # Track which person indices are still visible
+            seen = set()
+
+            for i, keypoints in enumerate(detections):
+                seen.add(i)
+                if i in person_landmarks:
+                    person_landmarks[i].update(keypoints)
+                else:
+                    person_landmarks[i] = Landmarks(keypoints)
+
+                lm = person_landmarks[i]
+
+                # Body velocity for silence check
+                body_vel = lm.mean_velocity(list(range(17)))
+                is_silent = silence_tracker.update(body_vel)
+
+                if is_silent:
+                    # Kill active notes for this person
+                    if i in active_melody_notes:
+                        midi.note_off(mel_cfg["channel"], active_melody_notes.pop(i))
+                    if i in active_bass_notes:
+                        midi.note_off(bass_cfg["channel"], active_bass_notes.pop(i))
+                    continue
+
+                chord = progression.current
+
+                # --- Harmony ---
+                harmony = HarmonyFeatures(lm)
+                if harmony.should_advance(harm_cfg["torso_tilt_threshold"]):
+                    progression.advance()
+                    log.info("Chord → %s", progression.current.name)
+                elif harmony.should_retreat(harm_cfg["torso_tilt_threshold"]):
+                    progression.retreat()
+                    log.info("Chord → %s", progression.current.name)
+
+                # Head tilt → chord tension (positive = tension, negative = simplified)
+                head_tilt = harmony.head_tilt()
+                tilt_sign = 0.0
+                if head_tilt > harm_cfg["head_tilt_threshold"]:
+                    tilt_sign = 1.0
+                elif head_tilt < -harm_cfg["head_tilt_threshold"]:
+                    tilt_sign = -1.0
+
+                # --- Melody (arms → vibraphone) ---
+                arms = ArmFeatures(lm)
+                arm_vel = arms.arm_velocity()
+
+                if arm_vel > mel_cfg["trigger_threshold"]:
+                    # Turn off previous note
+                    if i in active_melody_notes:
+                        midi.note_off(mel_cfg["channel"], active_melody_notes[i])
+
+                    note = chord.note_from_height(
+                        arms.mean_wrist_height(),
+                        mel_cfg["note_min"],
+                        mel_cfg["note_max"],
+                        tilt=tilt_sign,
+                    )
+                    velocity = int(np.interp(
+                        arm_vel,
+                        [mel_cfg["trigger_threshold"], 0.3],
+                        [mel_cfg["velocity_min"], mel_cfg["velocity_max"]],
+                    ))
+                    velocity = max(0, min(127, velocity))
+                    midi.note_on(mel_cfg["channel"], note, velocity)
+                    active_melody_notes[i] = note
+
+                midi.control_change(
+                    mel_cfg["channel"], mel_cfg["brightness_cc"], arms.brightness(),
+                )
+
+                # --- Bass (legs → acoustic bass) ---
+                legs = LegFeatures(lm)
+                ankle_vel = legs.ankle_velocity()
+
+                if ankle_vel > bass_cfg["trigger_threshold"]:
+                    if i in active_bass_notes:
+                        midi.note_off(bass_cfg["channel"], active_bass_notes[i])
+
+                    bass_note = chord.root
+                    midi.note_on(bass_cfg["channel"], bass_note, bass_cfg["velocity"])
+                    active_bass_notes[i] = bass_note
+
+            # Clean up disappeared people
+            disappeared = set(person_landmarks.keys()) - seen
+            for i in disappeared:
+                if i in active_melody_notes:
+                    midi.note_off(mel_cfg["channel"], active_melody_notes.pop(i))
+                if i in active_bass_notes:
+                    midi.note_off(bass_cfg["channel"], active_bass_notes.pop(i))
+                del person_landmarks[i]
+
+    finally:
+        # Clean shutdown
+        for ch in [mel_cfg["channel"], bass_cfg["channel"]]:
+            midi.all_notes_off(ch)
+        port.close()
+        cap.release()
+        fluidsynth.stop()
+        log.info("Shutdown complete")
+
+
+def main() -> None:
+    config = load_config()
+    run(config)
+
+
+if __name__ == "__main__":
+    main()

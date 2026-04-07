@@ -59,6 +59,25 @@ class TestPoseDetector:
 
         assert len(results) == 0
 
+    def test_detect_empty_keypoints_array(self):
+        """Keypoints present but shape[0]==0 returns empty list."""
+        mock_model = MagicMock()
+        mock_ultralytics.YOLO.return_value = mock_model
+
+        result = MagicMock()
+        # Keypoints exist but with 0 people (shape (0, 17, 3))
+        kp_data = np.zeros((0, 17, 3), dtype=np.float32)
+        result.keypoints = MagicMock()
+        result.keypoints.data = MagicMock()
+        result.keypoints.data.cpu.return_value.numpy.return_value = kp_data
+        mock_model.return_value = [result]
+
+        detector = PoseDetector(model_path="yolov8n-pose.pt", confidence=0.5)
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        results = detector.detect(frame)
+
+        assert len(results) == 0
+
     def test_normalises_coordinates(self):
         mock_model = MagicMock()
         mock_ultralytics.YOLO.return_value = mock_model

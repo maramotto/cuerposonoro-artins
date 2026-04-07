@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -8,8 +9,8 @@ class Chord:
     name: str
     root: int
     notes: list[int]
-    simplified: list[int] = field(default=None)
-    tension: list[int] = field(default=None)
+    simplified: Optional[list[int]] = field(default=None)
+    tension: Optional[list[int]] = field(default=None)
 
     def __post_init__(self) -> None:
         if self.simplified is None:
@@ -30,13 +31,10 @@ class Chord:
             return list(self.simplified)
         return list(self.notes)
 
-    def _notes_for_tilt(self, tilt: float) -> list[int]:
-        return self.active_notes(tilt)
-
     def all_notes_in_range(self, low: int, high: int, tilt: float = 0.0) -> list[int]:
         """Return all chord tones (across octaves) within [low, high], sorted."""
         result = set()
-        for note in self._notes_for_tilt(tilt):
+        for note in self.active_notes(tilt):
             pitch_class = note % 12
             for octave_note in range(pitch_class, 128, 12):
                 if low <= octave_note <= high:

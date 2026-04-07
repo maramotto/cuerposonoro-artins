@@ -63,6 +63,14 @@ class TestChord:
         mid_midi = 48 + 0.5 * (84 - 48)
         assert note == chord.nearest_note(int(mid_midi))
 
+    def test_nearest_note_fallback_to_full_range(self):
+        """When no candidates in ±12 range, fall back to full 0-127 search."""
+        # A chord with only very high notes — target at MIDI 10 has nothing ±12
+        chord = Chord(name="HighOnly", root=120, notes=[120])
+        result = chord.nearest_note(10)
+        # Pitch class of 120 is 0 (C). Nearest C to 10 is 12 (C1).
+        assert result == 12
+
 
 class TestChordTension:
     """Test head-tilt chord tension modification."""

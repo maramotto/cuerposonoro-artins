@@ -41,6 +41,28 @@ class TestFluidsynthManager:
         mgr.stop()  # Should not raise
 
     @patch("audio.fluidsynth.subprocess")
+    def test_stop_kills_on_timeout(self, mock_subprocess):
+        """If Fluidsynth hangs on terminate, kill it and still clear state."""
+        import subprocess as real_subprocess
+        mock_proc = MagicMock()
+        mock_proc.wait.side_effect = [
+            real_subprocess.TimeoutExpired("fluidsynth", 5),  # first wait
+            None,  # wait after kill
+        ]
+        mock_subprocess.Popen.return_value = mock_proc
+        mock_subprocess.TimeoutExpired = real_subprocess.TimeoutExpired
+        mgr = FluidsynthManager(
+            soundfont="JJazzLab-SoundFont.sf2",
+            gain=0.8,
+            sample_rate=44100,
+        )
+        mgr.start()
+        mgr.stop()
+        mock_proc.terminate.assert_called_once()
+        mock_proc.kill.assert_called_once()
+        assert not mgr.running
+
+    @patch("audio.fluidsynth.subprocess")
     def test_gain_in_args(self, mock_subprocess):
         mock_subprocess.Popen.return_value = MagicMock()
         mgr = FluidsynthManager(

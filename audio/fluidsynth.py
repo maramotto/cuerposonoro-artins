@@ -42,9 +42,16 @@ class FluidsynthManager:
         )
 
     def stop(self) -> None:
-        if self._process is not None:
-            self._process.terminate()
+        if self._process is None:
+            return
+        self._process.terminate()
+        try:
             self._process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            log.warning("Fluidsynth did not exit cleanly, killing")
+            self._process.kill()
+            self._process.wait()
+        finally:
             self._process = None
 
     @property
@@ -59,6 +66,7 @@ class FluidsynthManager:
         yet visible (it takes a moment after process startup).
         """
         fluid_addr = None
+        ports = ""
         backoff = _INITIAL_BACKOFF_S
 
         for attempt in range(_MAX_RETRIES):
@@ -79,6 +87,7 @@ class FluidsynthManager:
                 f"FLUID Synth ALSA port not found after {_MAX_RETRIES} attempts"
             )
 
+        # Use the same listing snapshot where fluid_addr was found
         virtual_addr = self._find_port(ports, virtual_port_name)
         if virtual_addr is None:
             raise RuntimeError(

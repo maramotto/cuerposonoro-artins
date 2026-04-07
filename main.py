@@ -21,6 +21,7 @@ from audio.midi import MidiOut
 from features.arms import ArmFeatures
 from features.harmony import HarmonyFeatures
 from features.legs import LegFeatures
+from features.silence import SilenceTracker
 from vision.detector import PoseDetector
 from vision.landmarks import Landmarks
 
@@ -31,28 +32,16 @@ logging.basicConfig(
 log = logging.getLogger("cuerposonoro")
 
 
-class SilenceTracker:
-    """Track whether body is still enough to trigger silence."""
-
-    def __init__(self, threshold: float, timeout_ms: int) -> None:
-        self._threshold = threshold
-        self._timeout_s = timeout_ms / 1000.0
-        self._still_since: float | None = None
-
-    def update(self, velocity: float) -> bool:
-        """Return True if sound should be silent."""
-        if velocity < self._threshold:
-            if self._still_since is None:
-                self._still_since = time.monotonic()
-            return (time.monotonic() - self._still_since) >= self._timeout_s
-        else:
-            self._still_since = None
-            return False
-
-
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        log.critical("Config file not found: %s", path)
+        sys.exit(1)
+    except yaml.YAMLError as exc:
+        log.critical("Invalid YAML in config file %s: %s", path, exc)
+        sys.exit(1)
 
 
 def run(config: dict) -> None:
@@ -118,13 +107,24 @@ def run(config: dict) -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
+    max_consecutive_failures = 30
+    consecutive_failures = 0
+
     log.info("Main loop started — chord: %s", progression.current.name)
 
     try:
         while running:
             ret, frame = cap.read()
             if not ret:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    log.error(
+                        "Camera feed lost after %d consecutive failures, exiting",
+                        consecutive_failures,
+                    )
+                    break
                 continue
+            consecutive_failures = 0
 
             detections = detector.detect(frame)
 

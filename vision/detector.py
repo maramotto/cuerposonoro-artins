@@ -84,7 +84,7 @@ class PoseDetector:
             pt_model.export(format="engine", half=tensorrt_half, device=0)
             log.info("TensorRT export complete, loading engine")
             return YOLO(str(engine_path))
-        except Exception:
+        except (RuntimeError, OSError):
             log.exception(
                 "TensorRT export failed, falling back to CPU with %s",
                 model_path,

@@ -60,6 +60,8 @@ def run(config: dict) -> None:
     detector = PoseDetector(
         model_path=config["vision"]["model"],
         confidence=config["vision"]["confidence_threshold"],
+        use_tensorrt=config["vision"].get("use_tensorrt", True),
+        tensorrt_half=config["vision"].get("tensorrt_half", True),
     )
 
     # Audio

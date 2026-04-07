@@ -5,6 +5,8 @@ vision:
   model: "yolov8n-pose"
   confidence_threshold: 0.5
   input_size: 640
+  use_tensorrt: true       # Set false on Mac (no TensorRT)
+  tensorrt_half: true      # FP16 on Ampere GPU — faster, negligible accuracy loss
 
 silence:
   velocity_threshold: 0.02

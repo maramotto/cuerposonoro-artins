@@ -107,6 +107,8 @@ All tunable parameters are in `config.yaml`. No magic numbers in code.
 | `model` | `yolov8n-pose` | YOLOv8-Pose model variant |
 | `confidence_threshold` | `0.5` | Minimum detection confidence |
 | `input_size` | `640` | Model input resolution |
+| `use_tensorrt` | `true` | Enable TensorRT GPU acceleration (set `false` on Mac) |
+| `tensorrt_half` | `true` | Use FP16 precision on Ampere GPU (faster, negligible accuracy loss) |
 
 ### `silence`
 

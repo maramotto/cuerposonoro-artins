@@ -4,6 +4,7 @@ Entry point. Reads config, initialises all components, runs the main loop.
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import signal
 import sys
@@ -70,12 +71,13 @@ def run(config: dict) -> None:
     fluidsynth.start()
     log.info("Fluidsynth started")
 
-    # Wait for Fluidsynth to initialise its ALSA port
-    time.sleep(1)
-
     port = mido.open_output(config["midi"]["port_name"], virtual=True)
     midi = MidiOut(port)
     log.info("MIDI port '%s' opened", config["midi"]["port_name"])
+
+    # Connect virtual MIDI port to Fluidsynth via aconnect
+    fluidsynth.connect_midi_port(config["midi"]["port_name"])
+    log.info("MIDI routed to Fluidsynth")
 
     # Set programs
     mel_cfg = config["melody"]
@@ -226,8 +228,34 @@ def run(config: dict) -> None:
         log.info("Shutdown complete")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="CuerpoSonoro: body movement to real-time sound",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["midi"],
+        default="midi",
+        help="Audio engine mode (default: midi)",
+    )
+    parser.add_argument(
+        "--midi-mode",
+        choices=["musical"],
+        default="musical",
+        help="MIDI mapping strategy (default: musical)",
+    )
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to configuration file (default: config.yaml)",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    config = load_config()
+    args = parse_args()
+    log.info("Starting with mode=%s, midi_mode=%s", args.mode, args.midi_mode)
+    config = load_config(args.config)
     run(config)
 
 

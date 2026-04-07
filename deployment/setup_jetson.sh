@@ -49,6 +49,11 @@ else
     echo "SoundFont downloaded successfully."
 fi
 
+echo "=== Pre-generating TensorRT engine (this takes ~2 minutes) ==="
+cd "${PROJECT_DIR}"
+python -c "from vision.detector import PoseDetector; PoseDetector('yolov8n-pose.pt', confidence=0.5, use_tensorrt=True)"
+echo "TensorRT engine ready."
+
 echo "=== Making startup script executable ==="
 chmod +x "${PROJECT_DIR}/deployment/start_cuerposonoro.sh"
 

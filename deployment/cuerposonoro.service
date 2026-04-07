@@ -1,15 +1,30 @@
 [Unit]
-Description=Cuerposonoro Jetson - Body-to-sound art installation
-After=network.target sound.target
+Description=CuerpoSonoro - Body-to-sound art installation
+After=graphical.target sound.target
+Wants=sound.target
 
 [Service]
 Type=simple
-User=jetson
-WorkingDirectory=/home/jetson/cuerposonoro-jetson
-ExecStart=/usr/bin/python3 /home/jetson/cuerposonoro-jetson/main.py
+User=maramotto
+WorkingDirectory=/home/maramotto/cuerposonoro
+ExecStart=/home/maramotto/cuerposonoro/deployment/start_cuerposonoro.sh
+
+# Headless — no display needed
+Environment=DISPLAY=
+# PulseAudio runs per-user; point to maramotto's session socket
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
+# Unbuffered Python output so logs are written immediately
 Environment=PYTHONUNBUFFERED=1
-Restart=on-failure
-RestartSec=5
+
+# Watchdog: restart on any exit (crash, error, or clean exit)
+Restart=always
+RestartSec=10
+
+# Logging: stdout/stderr go to journald (persistent via script tee)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cuerposonoro
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

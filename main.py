@@ -51,8 +51,15 @@ class SilenceTracker:
 
 
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        log.critical("Config file not found: %s", path)
+        sys.exit(1)
+    except yaml.YAMLError as exc:
+        log.critical("Invalid YAML in config file %s: %s", path, exc)
+        sys.exit(1)
 
 
 def run(config: dict) -> None:
@@ -118,13 +125,24 @@ def run(config: dict) -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
+    max_consecutive_failures = 30
+    consecutive_failures = 0
+
     log.info("Main loop started — chord: %s", progression.current.name)
 
     try:
         while running:
             ret, frame = cap.read()
             if not ret:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    log.error(
+                        "Camera feed lost after %d consecutive failures, exiting",
+                        consecutive_failures,
+                    )
+                    break
                 continue
+            consecutive_failures = 0
 
             detections = detector.detect(frame)
 

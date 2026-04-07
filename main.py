@@ -21,6 +21,7 @@ from audio.midi import MidiOut
 from features.arms import ArmFeatures
 from features.harmony import HarmonyFeatures
 from features.legs import LegFeatures
+from features.silence import SilenceTracker
 from vision.detector import PoseDetector
 from vision.landmarks import Landmarks
 
@@ -29,25 +30,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger("cuerposonoro")
-
-
-class SilenceTracker:
-    """Track whether body is still enough to trigger silence."""
-
-    def __init__(self, threshold: float, timeout_ms: int) -> None:
-        self._threshold = threshold
-        self._timeout_s = timeout_ms / 1000.0
-        self._still_since: float | None = None
-
-    def update(self, velocity: float) -> bool:
-        """Return True if sound should be silent."""
-        if velocity < self._threshold:
-            if self._still_since is None:
-                self._still_since = time.monotonic()
-            return (time.monotonic() - self._still_since) >= self._timeout_s
-        else:
-            self._still_since = None
-            return False
 
 
 def load_config(path: str = "config.yaml") -> dict:

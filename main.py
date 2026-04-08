@@ -16,7 +16,7 @@ import numpy as np
 import yaml
 
 from audio.chords import ChordProgression
-from audio.fluidsynth import FluidsynthManager
+from audio.platform import make_fluidsynth_manager
 from audio.midi import MidiOut
 from features.arms import ArmFeatures
 from features.harmony import HarmonyFeatures
@@ -54,7 +54,7 @@ def run(config: dict) -> None:
     )
 
     # Audio
-    fluidsynth = FluidsynthManager(
+    fluidsynth = make_fluidsynth_manager(
         soundfont=config["fluidsynth"]["soundfont"],
         gain=config["fluidsynth"]["gain"],
         sample_rate=config["fluidsynth"]["sample_rate"],
@@ -87,7 +87,7 @@ def run(config: dict) -> None:
     )
 
     # Camera
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(config["camera"]["device_id"])
     if not cap.isOpened():
         log.error("Cannot open camera")
         sys.exit(1)

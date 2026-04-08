@@ -5,7 +5,7 @@ vision:
   model: "yolov8n-pose"
   confidence_threshold: 0.5
   input_size: 640
-  use_tensorrt: true       # Set false on Mac (no TensorRT)
+  use_tensorrt: false      # Set false on Mac (no TensorRT), true on Jetson
   tensorrt_half: true      # FP16 on Ampere GPU — faster, negligible accuracy loss
 
 silence:
@@ -67,6 +67,9 @@ fluidsynth:
   soundfont: "JJazzLab-SoundFont.sf2"
   gain: 0.8
   sample_rate: 44100
+
+camera:
+  device_id: 0             # Camera index for cv2.VideoCapture
 
 midi:
   port_name: "cuerposonoro"

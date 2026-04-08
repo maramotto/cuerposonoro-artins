@@ -112,3 +112,4 @@ htmlcov/
 *.swp
 *.swo
 *~
+*.engine

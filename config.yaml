@@ -74,6 +74,10 @@ camera:
 midi:
   port_name: "cuerposonoro"
 
+# Jetson MIDI mode — velocity-driven, sustained notes, hysteresis filtering
+jetson:
+  hysteresis_frames: 2     # consecutive frames above threshold needed to trigger a note
+
 
 
 ## Descubrir qué índice tiene la C922

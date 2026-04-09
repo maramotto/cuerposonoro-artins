@@ -52,4 +52,4 @@ exec > >(tee -a "${LOG_FILE}") 2>&1
 # --- Launch CuerpoSonoro ---
 cd "${PROJECT_DIR}"
 echo "Starting CuerpoSonoro at $(date -Iseconds)"
-exec python main.py --mode midi --midi-mode musical
+exec python main.py --mode midi --midi-mode jetson

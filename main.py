@@ -16,6 +16,7 @@ import numpy as np
 import yaml
 
 from audio.chords import ChordProgression
+from audio.jetson_sender import JetsonMidiSender
 from audio.platform import make_fluidsynth_manager
 from audio.midi import MidiOut
 from features.arms import ArmFeatures
@@ -44,7 +45,7 @@ def load_config(path: str = "config.yaml") -> dict:
         sys.exit(1)
 
 
-def run(config: dict) -> None:
+def run(config: dict, midi_mode: str = "musical") -> None:
     # Vision
     detector = PoseDetector(
         model_path=config["vision"]["model"],
@@ -62,38 +63,110 @@ def run(config: dict) -> None:
     fluidsynth.start()
     log.info("Fluidsynth started")
 
-    port = mido.open_output(config["midi"]["port_name"], virtual=True)
-    midi = MidiOut(port)
-    log.info("MIDI port '%s' opened", config["midi"]["port_name"])
-
-    # Connect virtual MIDI port to Fluidsynth via aconnect
-    fluidsynth.connect_midi_port(config["midi"]["port_name"])
-    log.info("MIDI routed to Fluidsynth")
-
-    # Set programs
-    mel_cfg = config["melody"]
-    bass_cfg = config["bass"]
-    midi.program_change(channel=mel_cfg["channel"], program=mel_cfg["program"])
-    midi.program_change(channel=bass_cfg["channel"], program=bass_cfg["program"])
-
-    # Harmony
+    # Harmony (shared by both modes)
     progression = ChordProgression.from_config(config["harmony"]["chord_progression"])
-    harm_cfg = config["harmony"]
 
-    # Silence
-    silence_tracker = SilenceTracker(
-        threshold=config["silence"]["velocity_threshold"],
-        timeout_ms=config["silence"]["timeout_ms"],
+    if midi_mode == "jetson":
+        _run_jetson(config, detector, fluidsynth, progression)
+    else:
+        _run_musical(config, detector, fluidsynth, progression)
+
+
+def _run_jetson(config, detector, fluidsynth, progression) -> None:
+    """Jetson mode: velocity-driven, sustained notes, hysteresis."""
+    sender = JetsonMidiSender(
+        synth=fluidsynth.synth,
+        config=config,
+        chord_progression=progression,
     )
+    log.info("Jetson MIDI mode active (hysteresis=%d frames)",
+             config["jetson"]["hysteresis_frames"])
 
-    # Camera
     cap = cv2.VideoCapture(config["camera"]["device_id"])
     if not cap.isOpened():
         log.error("Cannot open camera")
         sys.exit(1)
     log.info("Camera opened")
 
-    # Per-person state
+    person_landmarks: dict[int, Landmarks] = {}
+    running = True
+
+    def on_signal(signum, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    max_consecutive_failures = 30
+    consecutive_failures = 0
+
+    log.info("Main loop started — chord: %s", progression.current.name)
+
+    try:
+        while running:
+            ret, frame = cap.read()
+            if not ret:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    log.error(
+                        "Camera feed lost after %d consecutive failures, exiting",
+                        consecutive_failures,
+                    )
+                    break
+                continue
+            consecutive_failures = 0
+
+            detections = detector.detect(frame)
+            seen = set()
+
+            for i, keypoints in enumerate(detections):
+                seen.add(i)
+                if i in person_landmarks:
+                    person_landmarks[i].update(keypoints)
+                else:
+                    person_landmarks[i] = Landmarks(keypoints)
+
+                sender.update(person_landmarks[i])
+
+            # Clean up disappeared people
+            disappeared = set(person_landmarks.keys()) - seen
+            for i in disappeared:
+                del person_landmarks[i]
+
+    finally:
+        sender.close()
+        cap.release()
+        fluidsynth.stop()
+        log.info("Shutdown complete")
+
+
+def _run_musical(config, detector, fluidsynth, progression) -> None:
+    """Musical mode: per-frame note triggers (original behaviour)."""
+    port = mido.open_output(config["midi"]["port_name"], virtual=True)
+    midi = MidiOut(port)
+    log.info("MIDI port '%s' opened", config["midi"]["port_name"])
+
+    fluidsynth.connect_midi_port(config["midi"]["port_name"])
+    log.info("MIDI routed to Fluidsynth")
+
+    mel_cfg = config["melody"]
+    bass_cfg = config["bass"]
+    harm_cfg = config["harmony"]
+    midi.program_change(channel=mel_cfg["channel"], program=mel_cfg["program"])
+    midi.program_change(channel=bass_cfg["channel"], program=bass_cfg["program"])
+
+    silence_tracker = SilenceTracker(
+        threshold=config["silence"]["velocity_threshold"],
+        timeout_ms=config["silence"]["timeout_ms"],
+    )
+
+    cap = cv2.VideoCapture(config["camera"]["device_id"])
+    if not cap.isOpened():
+        log.error("Cannot open camera")
+        sys.exit(1)
+    log.info("Camera opened")
+
     person_landmarks: dict[int, Landmarks] = {}
     active_melody_notes: dict[int, int] = {}
     active_bass_notes: dict[int, int] = {}
@@ -242,9 +315,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--midi-mode",
-        choices=["musical"],
+        choices=["musical", "jetson"],
         default="musical",
-        help="MIDI mapping strategy (default: musical)",
+        help="MIDI mapping strategy: 'musical' (tempo-grid) or 'jetson' (velocity-driven)",
     )
     parser.add_argument(
         "--config",
@@ -258,7 +331,7 @@ def main() -> None:
     args = parse_args()
     log.info("Starting with mode=%s, midi_mode=%s", args.mode, args.midi_mode)
     config = load_config(args.config)
-    run(config)
+    run(config, midi_mode=args.midi_mode)
 
 
 if __name__ == "__main__":

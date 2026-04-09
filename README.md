@@ -31,9 +31,8 @@ by design.
 ```
 Camera → YOLOv8-Pose (TensorRT) → Landmark extraction
   → Feature analysis (arms, legs, harmony)
-    → MIDI messages → virtual port "cuerposonoro"
-      → aconnect → Fluidsynth (soundfont)
-        → PulseAudio → Focusrite Scarlett 2i2 → Speakers
+    → pyfluidsynth API → Fluidsynth synth (in-process)
+      → PulseAudio → Focusrite Scarlett 2i2 → Speakers
 ```
 
 End-to-end latency target: **under 80ms** (camera frame to audible sound).
@@ -273,12 +272,7 @@ All tunable parameters live in `config.yaml`. No magic numbers in code.
 | `soundfont` | `JJazzLab-SoundFont.sf2` | Path to the SF2 soundfont file |
 | `gain` | `0.8` | Master volume (0.0–1.0) |
 | `sample_rate` | `44100` | Audio sample rate in Hz |
-
-### `midi`
-
-| Parameter | Default | Description |
-|---|---|---|
-| `port_name` | `cuerposonoro` | Name of the virtual ALSA MIDI port |
+| `driver` | `coreaudio` | Audio driver: `coreaudio` on Mac, `pulseaudio` on Jetson |
 
 ## Project structure
 
@@ -303,8 +297,8 @@ cuerposonoro-jetson/
 
   audio/
     chords.py             # Chord voicings, note selection, tension/simplification
-    fluidsynth.py         # Fluidsynth process management + aconnect MIDI routing
-    midi.py               # MIDI note/CC output via virtual ALSA port
+    fluidsynth.py         # In-process Fluidsynth synth via pyfluidsynth
+    midi.py               # MIDI note/CC output via pyfluidsynth direct API
 
   deployment/
     cuerposonoro.service  # systemd unit file (auto-start, watchdog)
@@ -326,9 +320,8 @@ cuerposonoro-jetson/
 ### No sound
 
 1. Check Fluidsynth is running: `journalctl -u cuerposonoro -b | grep -i fluid`
-2. Check MIDI routing: `aconnect -l` should show `cuerposonoro` connected to `FLUID Synth`
-3. Check PulseAudio: `sudo -u maramotto pactl list sinks short`
-4. Check the Scarlett 2i2 is detected: `sudo -u maramotto pactl list sinks short | grep -i scarlett`
+2. Check PulseAudio: `sudo -u maramotto pactl list sinks short`
+3. Check the Scarlett 2i2 is detected: `sudo -u maramotto pactl list sinks short | grep -i scarlett`
 
 ### Camera not found
 
@@ -361,5 +354,5 @@ sudo systemctl restart cuerposonoro
   Nebauer. Free to use, attribution required.
 - **YOLOv8-Pose:** Ultralytics, AGPL-3.0 licence.
 - **Fluidsynth:** LGPL-2.1 licence.
-- **mido / python-rtmidi:** MIT licence.
+- **pyfluidsynth:** LGPL-2.1 licence.
 - **OpenCV:** Apache 2.0 licence.

@@ -11,7 +11,6 @@ import sys
 import time
 
 import cv2
-import mido
 import numpy as np
 import yaml
 
@@ -58,17 +57,13 @@ def run(config: dict) -> None:
         soundfont=config["fluidsynth"]["soundfont"],
         gain=config["fluidsynth"]["gain"],
         sample_rate=config["fluidsynth"]["sample_rate"],
+        driver=config["fluidsynth"]["driver"],
     )
     fluidsynth.start()
     log.info("Fluidsynth started")
 
-    port = mido.open_output(config["midi"]["port_name"], virtual=True)
-    midi = MidiOut(port)
-    log.info("MIDI port '%s' opened", config["midi"]["port_name"])
-
-    # Connect virtual MIDI port to Fluidsynth via aconnect
-    fluidsynth.connect_midi_port(config["midi"]["port_name"])
-    log.info("MIDI routed to Fluidsynth")
+    midi = MidiOut(fluidsynth.synth)
+    log.info("MIDI connected to Fluidsynth synth (direct API)")
 
     # Set programs
     mel_cfg = config["melody"]
@@ -224,7 +219,6 @@ def run(config: dict) -> None:
         # Clean shutdown
         for ch in [mel_cfg["channel"], bass_cfg["channel"]]:
             midi.all_notes_off(ch)
-        port.close()
         cap.release()
         fluidsynth.stop()
         log.info("Shutdown complete")

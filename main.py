@@ -10,8 +10,6 @@ import signal
 import sys
 import time
 
-import cv2
-import mido
 import numpy as np
 import yaml
 
@@ -22,6 +20,7 @@ from features.arms import ArmFeatures
 from features.harmony import HarmonyFeatures
 from features.legs import LegFeatures
 from features.silence import SilenceTracker
+from vision.capture import ThreadedCamera
 from vision.detector import PoseDetector
 from vision.landmarks import Landmarks
 
@@ -86,12 +85,12 @@ def run(config: dict) -> None:
         timeout_ms=config["silence"]["timeout_ms"],
     )
 
-    # Camera
-    cap = cv2.VideoCapture(config["camera"]["device_id"])
-    if not cap.isOpened():
+    # Camera (threaded — always provides the most recent frame)
+    camera = ThreadedCamera(config["camera"]["device_id"])
+    if not camera.is_opened:
         log.error("Cannot open camera")
         sys.exit(1)
-    log.info("Camera opened")
+    log.info("Camera opened (threaded capture)")
 
     # Per-person state
     person_landmarks: dict[int, Landmarks] = {}
@@ -114,8 +113,8 @@ def run(config: dict) -> None:
 
     try:
         while running:
-            ret, frame = cap.read()
-            if not ret:
+            frame = camera.read()
+            if frame is None:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
                     log.error(
@@ -224,8 +223,7 @@ def run(config: dict) -> None:
         # Clean shutdown
         for ch in [mel_cfg["channel"], bass_cfg["channel"]]:
             midi.all_notes_off(ch)
-        port.close()
-        cap.release()
+        camera.release()
         fluidsynth.stop()
         log.info("Shutdown complete")
 

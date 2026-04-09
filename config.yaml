@@ -5,7 +5,7 @@ vision:
   model: "yolov8n-pose"
   confidence_threshold: 0.5
   input_size: 640
-  use_tensorrt: false      # Set false on Mac (no TensorRT), true on Jetson
+  use_tensorrt: true      # Set false on Mac (no TensorRT), true on Jetson
   tensorrt_half: true      # FP16 on Ampere GPU — faster, negligible accuracy loss
 
 silence:
@@ -19,13 +19,13 @@ melody:
   note_max: 84         # C6
   velocity_min: 30
   velocity_max: 120
-  trigger_threshold: 0.03
+  trigger_threshold: 0.04
   brightness_cc: 74
 
 bass:
   channel: 1           # MIDI channel 1 (displayed as ch2)
   program: 32          # acoustic bass (GM program 32)
-  trigger_threshold: 0.03
+  trigger_threshold: 0.04
   velocity: 100
 
 harmony:
@@ -67,7 +67,7 @@ fluidsynth:
   soundfont: "JJazzLab-SoundFont.sf2"
   gain: 0.8
   sample_rate: 44100
-  driver: "coreaudio"     # "coreaudio" on Mac, "pulseaudio" on Jetson
+  driver: "pulseaudio"     # "coreaudio" on Mac, "pulseaudio" on Jetson
 
 camera:
   device_id: 0             # Camera index for cv2.VideoCapture

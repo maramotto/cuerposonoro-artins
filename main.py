@@ -21,7 +21,6 @@ from features.arms import ArmFeatures
 from features.harmony import HarmonyFeatures
 from features.legs import LegFeatures
 from features.silence import SilenceTracker
-from vision.capture import WebcamCamera
 from vision.detector import PoseDetector
 from vision.landmarks import Landmarks
 

@@ -6,8 +6,8 @@ Wants=sound.target
 [Service]
 Type=simple
 User=maramotto
-WorkingDirectory=/home/maramotto/cuerposonoro
-ExecStart=/home/maramotto/cuerposonoro/deployment/start_cuerposonoro.sh
+WorkingDirectory=/home/maramotto/cuerposonoro-artins/cuerposonoro-artins
+ExecStart=/home/maramotto/cuerposonoro-artins/cuerposonoro-artins/deployment/start_cuerposonoro.sh
 
 # Headless — no display needed
 Environment=DISPLAY=

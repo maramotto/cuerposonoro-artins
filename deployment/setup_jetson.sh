@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/home/maramotto/cuerposonoro"
+PROJECT_DIR="/home/maramotto/cuerposonoro-artins/cuerposonoro-artins"
 VENV_DIR="${PROJECT_DIR}/venv"
 SOUNDFONT_URL="https://archive.org/download/jjazz-lab-sound-font/JJazzLab-SoundFont.sf2"
 SOUNDFONT_PATH="${PROJECT_DIR}/JJazzLab-SoundFont.sf2"

@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/home/maramotto/cuerposonoro"
+PROJECT_DIR="/home/maramotto/cuerposonoro-artins/cuerposonoro-artins"
 VENV_DIR="${PROJECT_DIR}/venv"
 LOG_DIR="${PROJECT_DIR}/logs"
 LOG_FILE="${LOG_DIR}/cuerposonoro.log"

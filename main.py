@@ -15,6 +15,7 @@ import yaml
 
 from audio.chords import ChordProgression
 from audio.jetson_sender import JetsonMidiSender
+from audio.gesture_mode import GestureMidiMode
 from audio.realtime_mode import RealtimeMidiMode
 from audio.platform import make_fluidsynth_manager
 from audio.midi import MidiOut
@@ -76,12 +77,81 @@ def run(config: dict, midi_mode: str = "musical") -> None:
     # Harmony
     progression = ChordProgression.from_config(config["harmony"]["chord_progression"])
 
-    if midi_mode == "realtime":
+    if midi_mode == "gesture":
+        _run_gesture(config, detector, fluidsynth)
+    elif midi_mode == "realtime":
         _run_realtime(config, detector, fluidsynth)
     elif midi_mode == "jetson":
         _run_jetson(config, detector, fluidsynth, progression)
     else:
         _run_musical(config, detector, fluidsynth, progression)
+
+
+def _run_gesture(config, detector, fluidsynth) -> None:
+    """Gesture mode: direction-based, 3 voices, Re dorian."""
+    mode = GestureMidiMode(synth=fluidsynth.synth, config=config)
+    log.info(
+        "Gesture MIDI mode active (hysteresis=%d, silence=%d frames)",
+        config["gesture"]["hysteresis_frames"],
+        config["gesture"]["silence_frames"],
+    )
+
+    camera = WebcamCamera(config["camera"]["device_id"])
+    if not camera.is_opened:
+        log.error("Cannot open camera")
+        sys.exit(1)
+    log.info("Camera opened")
+
+    person_landmarks: dict[int, Landmarks] = {}
+    running = True
+
+    def on_signal(signum, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    max_consecutive_failures = 30
+    consecutive_failures = 0
+
+    log.info("Main loop started (gesture mode, Re dorian)")
+
+    try:
+        while running:
+            frame = camera.read()
+            if frame is None:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    log.error(
+                        "Camera feed lost after %d consecutive failures, exiting",
+                        consecutive_failures,
+                    )
+                    break
+                continue
+            consecutive_failures = 0
+
+            detections = detector.detect(frame)
+            seen = set()
+
+            for i, keypoints in enumerate(detections):
+                seen.add(i)
+                if i in person_landmarks:
+                    person_landmarks[i].update(keypoints)
+                else:
+                    person_landmarks[i] = Landmarks(keypoints)
+
+                mode.update(person_landmarks[i])
+
+            disappeared = set(person_landmarks.keys()) - seen
+            for i in disappeared:
+                del person_landmarks[i]
+
+    finally:
+        mode.close()
+        camera.release()
+        fluidsynth.stop()
+        log.info("Shutdown complete")
 
 
 def _run_realtime(config, detector, fluidsynth) -> None:
@@ -378,10 +448,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--midi-mode",
-        choices=["musical", "jetson", "realtime"],
-        default="realtime",
-        help="MIDI mapping strategy: 'realtime' (per-keypoint, Jetson-optimised), "
-             "'jetson' (velocity-driven), or 'musical' (tempo-grid)",
+        choices=["gesture", "realtime", "jetson", "musical"],
+        default="gesture",
+        help="MIDI mapping strategy: 'gesture' (direction-based, Re dorian), "
+             "'realtime' (per-keypoint velocity), 'jetson' (velocity-driven), "
+             "or 'musical' (tempo-grid)",
     )
     parser.add_argument(
         "--config",

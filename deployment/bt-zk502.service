@@ -1,0 +1,12 @@
+[Unit]
+Description=Bluetooth autoconnect ZK502-C and set as default audio sink
+After=pipewire.service wireplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bt-zk502-connect.sh
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

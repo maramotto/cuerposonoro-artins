@@ -65,12 +65,12 @@ harmony:
 
 fluidsynth:
   soundfont: "JJazzLab-SoundFont.sf2"
-  gain: 0.8
+  gain: 2.0
   sample_rate: 44100
   driver: "pulseaudio"     # "coreaudio" on Mac, "pulseaudio" on Jetson
 
 camera:
-  device_id: 1             # Camera index for cv2.VideoCapture
+  device_id: 0             # Camera index for cv2.VideoCapture
 
 midi:
   port_name: "cuerposonoro"

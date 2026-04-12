@@ -46,6 +46,25 @@ while ! pactl info >/dev/null 2>&1; do
 done
 echo "PulseAudio ready"
 
+# --- Wait for Bluetooth A2DP sink (ZK502-C) ---
+BT_SINK_PATTERN="E2_70_F5_E3_73_FC"
+BT_TIMEOUT=60
+echo "Waiting for Bluetooth sink (timeout: ${BT_TIMEOUT}s)..."
+elapsed=0
+while ! pactl list sinks short 2>/dev/null | grep -q "$BT_SINK_PATTERN"; do
+    if [ "${elapsed}" -ge "${BT_TIMEOUT}" ]; then
+        echo "WARNING: Bluetooth sink not available after ${BT_TIMEOUT}s, continuing with default sink" >&2
+        break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+done
+if pactl list sinks short 2>/dev/null | grep -q "$BT_SINK_PATTERN"; then
+    BT_SINK=$(pactl list sinks short | grep "$BT_SINK_PATTERN" | awk '{print $2}')
+    pactl set-default-sink "$BT_SINK"
+    echo "Bluetooth sink active: $BT_SINK"
+fi
+
 # --- Duplicate output to log file AND stdout (journald) ---
 exec > >(tee -a "${LOG_FILE}") 2>&1
 

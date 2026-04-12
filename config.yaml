@@ -70,7 +70,7 @@ fluidsynth:
   driver: "pulseaudio"     # "coreaudio" on Mac, "pulseaudio" on Jetson
 
 camera:
-  device_id: 0             # Camera index for cv2.VideoCapture
+  device_id: 1             # Camera index for cv2.VideoCapture
 
 midi:
   port_name: "cuerposonoro"

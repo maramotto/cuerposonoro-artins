@@ -66,7 +66,7 @@ class TestParseArgs:
         monkeypatch.setattr("sys.argv", ["main.py"])
         args = mod.parse_args()
         assert args.mode == "midi"
-        assert args.midi_mode == "realtime"
+        assert args.midi_mode == "gesture"
         assert args.config == "config.yaml"
 
     def test_custom_flags(self, monkeypatch):

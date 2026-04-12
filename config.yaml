@@ -115,7 +115,25 @@ realtime:
       index: 15
       channel: 1             # bass
       note_min: 38           # D2
-      note_max: 50           # D3     # consecutive frames above threshold needed to trigger a note
+      note_max: 50           # D3
+
+# Gesture MIDI mode — direction-based, 3 voices, Re dorian
+# Movement direction maps to scale steps; energy to volume; duration to articulation
+gesture:
+  min_velocity: 0.01         # below this = stillness (normalised coords)
+  hysteresis_frames: 3       # consistent direction for N frames before triggering
+  silence_frames: 6          # release note after N still frames
+  velocity_max: 0.15         # max velocity for CC7/step mapping
+  staccato_frames: 6         # frames_active < this = staccato (immediate noteoff)
+  sustain_frames: 8          # frames_active >= this = reverb tail on release
+  reverb_cc91: 80            # CC91 value for sustained notes
+  programs:
+    arms:
+      channel: 0
+      program: 11            # vibraphone
+    center:
+      channel: 1
+      program: 32            # acoustic bass
 
 
 

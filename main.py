@@ -24,6 +24,7 @@ from features.harmony import HarmonyFeatures
 from features.legs import LegFeatures
 from features.silence import SilenceTracker
 from vision.detector import PoseDetector
+from vision.capture import WebcamCamera
 from vision.landmarks import Landmarks
 
 logging.basicConfig(

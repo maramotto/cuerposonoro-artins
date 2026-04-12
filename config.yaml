@@ -77,7 +77,45 @@ midi:
 
 # Jetson MIDI mode — velocity-driven, sustained notes, hysteresis filtering
 jetson:
-  hysteresis_frames: 2     # consecutive frames above threshold needed to trigger a note
+  hysteresis_frames: 2
+
+# Realtime MIDI mode — per-keypoint, D minor pentatonic, optimised for Jetson 18fps
+# Thresholds in normalised coordinates [0,1] — 0.015 ≈ 8px at 640x480
+realtime:
+  min_velocity: 0.015        # ignore jitter below this (normalised coords)
+  hysteresis_frames: 2       # must exceed threshold for N consecutive frames
+  silence_frames: 6          # release note after N frames of stillness
+  velocity_max: 0.15         # movement beyond this maps to max MIDI velocity
+  midi_velocity_min: 40
+  midi_velocity_max: 120
+  programs:
+    melody:
+      channel: 0
+      program: 11            # vibraphone
+    bass:
+      channel: 1
+      program: 32            # acoustic bass
+  keypoints:
+    right_wrist:
+      index: 10
+      channel: 0             # melody
+      note_min: 74           # D5
+      note_max: 86           # D6
+    left_wrist:
+      index: 9
+      channel: 0             # melody
+      note_min: 62           # D4
+      note_max: 74           # D5
+    right_ankle:
+      index: 16
+      channel: 1             # bass
+      note_min: 38           # D2
+      note_max: 50           # D3
+    left_ankle:
+      index: 15
+      channel: 1             # bass
+      note_min: 38           # D2
+      note_max: 50           # D3     # consecutive frames above threshold needed to trigger a note
 
 
 

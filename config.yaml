@@ -138,15 +138,3 @@ gesture:
     center:
       channel: 1
       program: 32            # acoustic bass
-
-
-
-## Descubrir qué índice tiene la C922
-#python -c "
-#import cv2
-#for i in range(5):
-#    cap = cv2.VideoCapture(i)
-#    if cap.isOpened():
-#        print(f'device {i}: OK')
-#        cap.release()
-#"

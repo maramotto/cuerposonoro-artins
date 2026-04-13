@@ -92,7 +92,7 @@ Threshold is a configurable parameter (not hardcoded).
 
 ---
 
-## Project structure (to be built)
+## Project structure
 
 ```
 cuerposonoro-jetson/
@@ -102,29 +102,40 @@ cuerposonoro-jetson/
   requirements.txt
   config.yaml             ← all tunable parameters (thresholds, chord prog, etc.)
 
-  main.py                 ← entry point
+  main.py                 ← entry point, shared detection loop, mode dispatch
 
   vision/
-    detector.py           ← YOLOv8-Pose wrapper
-    landmarks.py          ← landmark extraction and normalisation
+    detector.py           ← YOLOv8-Pose wrapper (TensorRT or CPU)
+    landmarks.py          ← landmark extraction, normalisation, velocity
+    capture.py            ← webcam wrapper (cv2.VideoCapture)
 
   features/
-    arms.py               ← melody descriptors
-    legs.py               ← rhythm descriptors
-    harmony.py            ← torso/head tilt → chord progression
+    arms.py               ← melody descriptors (wrist height, velocity, brightness)
+    legs.py               ← rhythm descriptors (ankle velocity)
+    harmony.py            ← torso/head tilt → chord progression control
+    silence.py            ← silence detection (velocity below threshold for timeout)
 
   audio/
-    fluidsynth.py         ← Fluidsynth process management
-    midi.py               ← MIDI note/CC output via ALSA virtual port
-    chords.py             ← chord voicings and note selection
+    chords.py             ← chord voicings, note selection, tension/simplification
+    fluidsynth.py         ← in-process Fluidsynth synth via pyfluidsynth
+    midi.py               ← MIDI note/CC output via pyfluidsynth direct API
+    platform.py           ← factory for platform-aware Fluidsynth setup
+    musical_mode.py       ← musical mode: per-frame triggers, chord progression
+    gesture_mode.py       ← gesture mode: direction-based, 3 voices, Re dorian
+    realtime_mode.py      ← realtime mode: per-keypoint velocity, D minor pentatonic
+    jetson_sender.py      ← jetson mode: velocity-driven, sustained notes
 
   deployment/
-    cuerposonoro.service  ← systemd unit file
+    cuerposonoro.service  ← systemd unit file (auto-start, watchdog)
+    start_cuerposonoro.sh ← startup script (venv, device waits, logging)
     setup_jetson.sh       ← one-time setup script for the Jetson
+    bt-zk502.service      ← systemd user service for Bluetooth A2DP
+    bt-zk502-connect.sh   ← Bluetooth connection script (ZK502-C)
 
   tests/
-    unit/
-    integration/
+    unit/                 ← fast tests, no hardware
+    integration/          ← mocked I/O tests
+    manual/               ← headless hardware diagnostics (not run by pytest)
 ```
 
 ---
@@ -223,51 +234,3 @@ and a recommendation with justification. Then wait for confirmation.
 1. `DESIGN.md` — full artistic and technical rationale
 2. `config.yaml` — current parameter values
 3. Any file you are about to modify
-
-
-PROPOSED PLAN BY CLAUDE CODE:
-
-  Before starting implementation, here's the plan I propose. Per TDD rules, I'll build bottom-up, starting with pure-logic modules that have no I/O dependencies:
-
-  Phase 1 — Foundation (no hardware, no I/O)
-  1. config.yaml — all tunable parameters
-  2. audio/chords.py — chord voicings, note selection (pure music theory)
-  3. vision/landmarks.py — landmark normalization (pure math)
-
-  Phase 2 — Feature extraction (pure math)
-  4. features/arms.py — melody descriptors
-  5. features/legs.py — rhythm descriptors
-  6. features/harmony.py — torso/head tilt → chord progression
-
-  Phase 3 — I/O boundaries
-  7. audio/midi.py — MIDI note/CC output
-  8. audio/fluidsynth.py — Fluidsynth process management
-  9. vision/detector.py — YOLOv8-Pose wrapper
-
-  Phase 4 — Integration
-  10. main.py — entry point wiring everything together
-  11. deployment/ — systemd unit, setup script
-  12. README.md
-
-  Each step follows Red → Green → Refactor: test file first, then implementation.
-
-  Before I start, I need your confirmation on dependencies for requirements.txt:
-
-  ┌───────────────┬─────────────────────────────────────────────────────────┐
-  │    Package    │                         Purpose                         │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ ultralytics   │ YOLOv8-Pose inference                                   │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ pyfluidsynth  │ Fluidsynth Python bindings                              │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ python-rtmidi │ MIDI output (cross-platform, works on Mac dev + Jetson) │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ pyyaml        │ config.yaml parsing                                     │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ numpy         │ Landmark math, velocity calculations                    │
-  ├───────────────┼─────────────────────────────────────────────────────────┤
-  │ pytest        │ Testing                                                 │
-  └───────────────┴─────────────────────────────────────────────────────────┘
-
-  Alternative for MIDI: mido 
-  

@@ -158,13 +158,67 @@ Head tilt to the right adds a tension to the active chord (e.g. Dm9 → Dm11). T
 
 ---
 
-## 6. Silence Thresholds
+## 6. MIDI Modes
+
+The system supports four distinct MIDI mapping strategies, selectable via `--midi-mode`. All share the same vision pipeline (camera → YOLOv8-Pose → person tracking) but differ in how movement maps to sound.
+
+### 6.1 Gesture mode (default)
+
+**Decision:** direction-based mapping with 3 voices, D dorian scale.
+
+Upward arm gesture produces ascending notes; downward produces descending. Energy (global velocity) controls volume. Duration determines articulation: short gestures produce staccato, longer gestures add a reverb tail on release.
+
+Three voices: right arm (D5–C6), left arm (D4–C5), and center/torso (D2–G2, bass). Each voice has independent hysteresis, preventing jitter from triggering false notes.
+
+**Artistic justification:** the most expressive mode for trained performers or visitors who explore deliberately. The scale-step approach rewards intentional gesture direction rather than random flailing.
+
+### 6.2 Musical mode
+
+The original mapping described in Section 4. Per-frame note triggers with silence detection, chord harmony from torso/head tilt, and the full 6-chord D minor progression.
+
+### 6.3 Realtime mode
+
+**Decision:** per-keypoint velocity-driven, D minor pentatonic.
+
+Each tracked keypoint (left wrist, right wrist, left ankle, right ankle) maps to its own pitch range within a D minor pentatonic scale. Velocity determines which note is triggered — faster movement produces higher notes.
+
+**Artistic justification:** provides a direct, visceral relationship between movement speed and pitch height. The pentatonic scale guarantees consonance regardless of which keypoints move simultaneously.
+
+### 6.4 Jetson mode
+
+**Decision:** velocity-driven with hysteresis and sustained notes.
+
+Similar to the musical mode but with sustained notes — notes hold as long as movement continues above threshold. Uses the chord progression for harmony.
+
+**Artistic justification:** designed for the Jetson's 18 FPS camera. Sustained notes compensate for the lower frame rate by maintaining musical continuity between sparse detections.
+
+### 6.5 Common architecture
+
+All four modes implement the same interface: `update(landmarks)` processes a single frame, `close()` releases resources. The main loop handles camera, detection, and person tracking — adding a new mode requires only a new class, no changes to the core loop.
+
+---
+
+## 7. Audio Output
+
+### 7.1 Bluetooth A2DP (ZK502-C)
+
+**Decision:** replace USB audio interface (Focusrite Scarlett 2i2) with Bluetooth A2DP speaker for the installation deployment.
+
+**Justification:** the ZK502-C speaker is small enough to embed in the installation structure and eliminates a USB cable. The Bluetooth connection is automated via a dedicated systemd user service that connects at login, waits for the A2DP sink, and sets it as the PulseAudio default.
+
+**Accepted trade-off:** Bluetooth A2DP introduces ~40ms of additional latency compared to USB audio. This is acceptable within the 80ms end-to-end target because TensorRT inference is well under 20ms, leaving headroom.
+
+**Fallback:** if Bluetooth is unavailable after 60 seconds, the startup script falls back to the default PulseAudio sink (USB or HDMI).
+
+---
+
+## 8. Silence Thresholds
 
 If overall body velocity drops below a threshold for more than **500ms**, both channels fall silent. The threshold is a configurable parameter, not a fixed value, so it can be adjusted during installation setup based on the space and camera distance.
 
 ---
 
-## 7. cuerposonoro vs. cuerposonoro-jetson
+## 9. cuerposonoro vs. cuerposonoro-jetson
 
 | | cuerposonoro (thesis) | cuerposonoro-jetson (installation) |
 |---|---|---|
@@ -183,7 +237,7 @@ What they share: the design of the kinematic descriptor-to-MIDI mapping, which i
 
 ---
 
-## 8. Credits and Licences
+## 10. Credits and Licences
 
 - **JJazzLab SoundFont SF2:** based on SGM-v2.01-NicePianosGuitarsBass by John Nebauer. Free to use, attribution required.
 - **YOLOv8-Pose:** Ultralytics, AGPL-3.0 licence.

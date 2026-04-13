@@ -9,7 +9,7 @@ vision:
   tensorrt_half: true      # FP16 on Ampere GPU — faster, negligible accuracy loss
 
 silence:
-  velocity_threshold: 0.02
+  velocity_threshold: 0.008
   timeout_ms: 500
 
 melody:
@@ -19,13 +19,14 @@ melody:
   note_max: 84         # C6
   velocity_min: 30
   velocity_max: 120
-  trigger_threshold: 0.04
+  trigger_threshold: 0.018
   brightness_cc: 74
+  note_cooldown_ms: 150      # minimum ms between note-on events (rate limiter)
 
 bass:
   channel: 1           # MIDI channel 1 (displayed as ch2)
   program: 32          # acoustic bass (GM program 32)
-  trigger_threshold: 0.04
+  trigger_threshold: 0.018
   velocity: 100
 
 harmony:
@@ -78,14 +79,16 @@ midi:
 # Jetson MIDI mode — velocity-driven, sustained notes, hysteresis filtering
 jetson:
   hysteresis_frames: 2
+  note_cooldown_ms: 150      # minimum ms between note-on events (rate limiter)
 
 # Realtime MIDI mode — per-keypoint, D minor pentatonic, optimised for Jetson 18fps
 # Thresholds in normalised coordinates [0,1] — 0.015 ≈ 8px at 640x480
 realtime:
-  min_velocity: 0.015        # ignore jitter below this (normalised coords)
+  min_velocity: 0.007        # ignore jitter below this (normalised coords)
   hysteresis_frames: 2       # must exceed threshold for N consecutive frames
-  silence_frames: 6          # release note after N frames of stillness
+  silence_frames: 18         # release note after N frames of stillness (~1s at 18fps)
   velocity_max: 0.15         # movement beyond this maps to max MIDI velocity
+  note_cooldown_ms: 150      # minimum ms between note-on events per keypoint
   midi_velocity_min: 40
   midi_velocity_max: 120
   programs:
@@ -120,13 +123,14 @@ realtime:
 # Gesture MIDI mode — direction-based, 3 voices, Re dorian
 # Movement direction maps to scale steps; energy to volume; duration to articulation
 gesture:
-  min_velocity: 0.01         # below this = stillness (normalised coords)
-  hysteresis_frames: 3       # consistent direction for N frames before triggering
-  silence_frames: 6          # release note after N still frames
+  min_velocity: 0.005        # below this = stillness (normalised coords)
+  hysteresis_frames: 2       # consistent direction for N frames before triggering
+  silence_frames: 18         # release note after N still frames (~1s at 18fps)
   velocity_max: 0.15         # max velocity for CC7/step mapping
-  staccato_frames: 6         # frames_active < this = staccato (immediate noteoff)
-  sustain_frames: 8          # frames_active >= this = reverb tail on release
+  staccato_frames: 3         # frames_active < this = staccato (immediate noteoff)
+  sustain_frames: 4          # frames_active >= this = reverb tail on release
   reverb_cc91: 80            # CC91 value for sustained notes
+  note_cooldown_ms: 150      # minimum ms between note-on events per voice
   programs:
     arms:
       channel: 0

@@ -306,6 +306,10 @@ def _run_musical(config, detector, fluidsynth, progression) -> None:
         timeout_ms=config["silence"]["timeout_ms"],
     )
 
+    cooldown_s = config.get("melody", {}).get("note_cooldown_ms", 150) / 1000.0
+    last_melody_noteon: dict[int, float] = {}
+    last_bass_noteon: dict[int, float] = {}
+
     camera = WebcamCamera(config["camera"]["device_id"])
     if not camera.is_opened:
         log.error("Cannot open camera")
@@ -385,25 +389,23 @@ def _run_musical(config, detector, fluidsynth, progression) -> None:
 
                 arms = ArmFeatures(lm)
                 arm_vel = arms.arm_velocity()
+                now = time.monotonic()
 
                 if arm_vel > mel_cfg["trigger_threshold"]:
-                    if i in active_melody_notes:
-                        midi.note_off(mel_cfg["channel"], active_melody_notes[i])
+                    if cooldown_s <= 0 or (now - last_melody_noteon.get(i, 0.0)) >= cooldown_s:
+                        if i in active_melody_notes:
+                            midi.note_off(mel_cfg["channel"], active_melody_notes[i])
 
-                    note = chord.note_from_height(
-                        arms.mean_wrist_height(),
-                        mel_cfg["note_min"],
-                        mel_cfg["note_max"],
-                        tilt=tilt_sign,
-                    )
-                    velocity = int(np.interp(
-                        arm_vel,
-                        [mel_cfg["trigger_threshold"], 0.3],
-                        [mel_cfg["velocity_min"], mel_cfg["velocity_max"]],
-                    ))
-                    velocity = max(0, min(127, velocity))
-                    midi.note_on(mel_cfg["channel"], note, velocity)
-                    active_melody_notes[i] = note
+                        note = chord.note_from_height(
+                            arms.mean_wrist_height(),
+                            mel_cfg["note_min"],
+                            mel_cfg["note_max"],
+                            tilt=tilt_sign,
+                        )
+                        velocity = 127
+                        midi.note_on(mel_cfg["channel"], note, velocity)
+                        active_melody_notes[i] = note
+                        last_melody_noteon[i] = now
 
                 midi.control_change(
                     mel_cfg["channel"], mel_cfg["brightness_cc"], arms.brightness(),
@@ -413,12 +415,14 @@ def _run_musical(config, detector, fluidsynth, progression) -> None:
                 ankle_vel = legs.ankle_velocity()
 
                 if ankle_vel > bass_cfg["trigger_threshold"]:
-                    if i in active_bass_notes:
-                        midi.note_off(bass_cfg["channel"], active_bass_notes[i])
+                    if cooldown_s <= 0 or (now - last_bass_noteon.get(i, 0.0)) >= cooldown_s:
+                        if i in active_bass_notes:
+                            midi.note_off(bass_cfg["channel"], active_bass_notes[i])
 
-                    bass_note = chord.root
-                    midi.note_on(bass_cfg["channel"], bass_note, bass_cfg["velocity"])
-                    active_bass_notes[i] = bass_note
+                        bass_note = chord.root
+                        midi.note_on(bass_cfg["channel"], bass_note, bass_cfg["velocity"])
+                        active_bass_notes[i] = bass_note
+                        last_bass_noteon[i] = now
 
             disappeared = set(person_landmarks.keys()) - seen
             for i in disappeared:

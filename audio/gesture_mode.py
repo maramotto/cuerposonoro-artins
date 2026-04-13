@@ -9,6 +9,7 @@ Designed for Jetson's 18 FPS camera and variable latency.
 from __future__ import annotations
 
 import logging
+import time
 
 import numpy as np
 
@@ -34,7 +35,7 @@ class _VoiceTracker:
     __slots__ = (
         "name", "indices", "channel", "notes", "note_index",
         "active_note", "direction_count", "last_direction",
-        "frames_active", "frames_silent",
+        "frames_active", "frames_silent", "last_noteon_time",
     )
 
     def __init__(
@@ -51,6 +52,7 @@ class _VoiceTracker:
         self.last_direction = 0  # -1 = up, +1 = down, 0 = none
         self.frames_active = 0
         self.frames_silent = 0
+        self.last_noteon_time = 0.0
 
 
 class GestureMidiMode:
@@ -73,6 +75,7 @@ class GestureMidiMode:
         self._staccato_frames = gc["staccato_frames"]
         self._sustain_frames = gc["sustain_frames"]
         self._reverb_cc91 = gc["reverb_cc91"]
+        self._cooldown_s = gc.get("note_cooldown_ms", 0) / 1000.0
 
         self._voices = [
             _VoiceTracker(name, indices, ch, nmin, nmax)
@@ -154,6 +157,11 @@ class GestureMidiMode:
             v.last_direction = direction
 
         if v.direction_count >= self._hysteresis_frames:
+            now = time.monotonic()
+            if self._cooldown_s > 0 and (now - v.last_noteon_time) < self._cooldown_s:
+                v.direction_count = 0
+                return
+
             # Determine step count from velocity magnitude (1–3)
             t = np.clip(
                 (velocity - self._min_velocity) / (self._velocity_max - self._min_velocity),
@@ -175,6 +183,7 @@ class GestureMidiMode:
                     midi_vel = self._velocity_to_midi(velocity)
                     self._synth.noteon(v.channel, new_note, midi_vel)
                     v.active_note = new_note
+                    v.last_noteon_time = now
 
             # Reset hysteresis counter after triggering
             v.direction_count = 0
@@ -200,35 +209,16 @@ class GestureMidiMode:
         v.frames_active = 0
 
     def _update_energy(self, landmarks: Landmarks) -> None:
-        """Map global movement energy to CC7 (volume) on both channels."""
-        all_indices = []
-        for v in self._voices:
-            all_indices.extend(v.indices)
-
-        velocities = [landmarks.velocity(i) for i in all_indices]
-        mean_vel = float(np.mean(velocities))
-
-        cc7_value = int(np.interp(
-            mean_vel,
-            [self._min_velocity, self._velocity_max],
-            [40, 110],
-        ))
-        cc7_value = max(0, min(127, cc7_value))
-
+        """Set CC7 (volume) to maximum on both channels."""
         channels_seen: set[int] = set()
         for v in self._voices:
             if v.channel not in channels_seen:
-                self._synth.cc(v.channel, 7, cc7_value)
+                self._synth.cc(v.channel, 7, 127)
                 channels_seen.add(v.channel)
 
     def _velocity_to_midi(self, velocity: float) -> int:
-        """Map movement velocity to MIDI note velocity."""
-        midi_vel = int(np.interp(
-            velocity,
-            [self._min_velocity, self._velocity_max],
-            [50, 120],
-        ))
-        return max(0, min(127, midi_vel))
+        """Return maximum MIDI note velocity."""
+        return 127
 
     def _tick_deferred(self) -> None:
         """Decrement deferred action counters and execute when ready."""

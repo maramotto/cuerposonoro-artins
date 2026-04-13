@@ -61,19 +61,30 @@ class JetsonMidiSender:
         arm_vel = arms.arm_velocity()
         ankle_vel = legs.ankle_velocity()
 
-        # --- Silence check ---
-        body_vel = max(arm_vel, ankle_vel)
+        if self._check_silence(max(arm_vel, ankle_vel)):
+            return
+
+        tilt_sign = self._update_harmony(harmony)
+        chord = self._progression.current
+
+        self._update_melody(arm_vel, arms, chord, tilt_sign)
+        self._update_bass(ankle_vel, chord)
+
+    def _check_silence(self, body_vel: float) -> bool:
+        """Return True if body is still long enough to silence all notes."""
         if body_vel < self._silence_cfg["velocity_threshold"]:
             if self._still_since is None:
                 self._still_since = time.monotonic()
             elapsed = time.monotonic() - self._still_since
             if elapsed >= self._silence_cfg["timeout_ms"] / 1000.0:
                 self._release_all()
-                return
+                return True
         else:
             self._still_since = None
+        return False
 
-        # --- Harmony ---
+    def _update_harmony(self, harmony: HarmonyFeatures) -> float:
+        """Advance/retreat chord progression and return tilt sign."""
         if harmony.should_advance(self._harm["torso_tilt_threshold"]):
             self._progression.advance()
             log.info("Chord → %s", self._progression.current.name)
@@ -82,15 +93,14 @@ class JetsonMidiSender:
             log.info("Chord → %s", self._progression.current.name)
 
         head_tilt = harmony.head_tilt()
-        tilt_sign = 0.0
         if head_tilt > self._harm["head_tilt_threshold"]:
-            tilt_sign = 1.0
+            return 1.0
         elif head_tilt < -self._harm["head_tilt_threshold"]:
-            tilt_sign = -1.0
+            return -1.0
+        return 0.0
 
-        chord = self._progression.current
-
-        # --- Melody (arms) ---
+    def _update_melody(self, arm_vel: float, arms: ArmFeatures, chord, tilt_sign: float) -> None:
+        """Trigger or sustain melody note based on arm velocity."""
         if arm_vel > self._mel["trigger_threshold"]:
             self._arm_frames_above += 1
         else:
@@ -102,24 +112,22 @@ class JetsonMidiSender:
         if self._arm_frames_above >= self._hysteresis_frames:
             now = time.monotonic()
             if self._cooldown_s > 0 and (now - self._melody_last_noteon) < self._cooldown_s:
-                pass  # skip — cooldown active
-            else:
-                note = chord.note_from_height(
-                    arms.mean_wrist_height(),
-                    self._mel["note_min"],
-                    self._mel["note_max"],
-                    tilt=tilt_sign,
-                )
-                velocity = 127
+                return
+            note = chord.note_from_height(
+                arms.mean_wrist_height(),
+                self._mel["note_min"],
+                self._mel["note_max"],
+                tilt=tilt_sign,
+            )
+            if note != self._melody_note:
+                if self._melody_note is not None:
+                    self._synth.noteoff(self._mel["channel"], self._melody_note)
+                self._synth.noteon(self._mel["channel"], note, 127)
+                self._melody_note = note
+                self._melody_last_noteon = now
 
-                if note != self._melody_note:
-                    if self._melody_note is not None:
-                        self._synth.noteoff(self._mel["channel"], self._melody_note)
-                    self._synth.noteon(self._mel["channel"], note, velocity)
-                    self._melody_note = note
-                    self._melody_last_noteon = now
-
-        # --- Bass (ankles) ---
+    def _update_bass(self, ankle_vel: float, chord) -> None:
+        """Trigger or sustain bass note based on ankle velocity."""
         if ankle_vel > self._bass["trigger_threshold"]:
             self._ankle_frames_above += 1
         else:
@@ -131,17 +139,16 @@ class JetsonMidiSender:
         if self._ankle_frames_above >= self._hysteresis_frames:
             now = time.monotonic()
             if self._cooldown_s > 0 and (now - self._bass_last_noteon) < self._cooldown_s:
-                pass  # skip — cooldown active
-            else:
-                bass_note = chord.root
-                if bass_note != self._bass_note:
-                    if self._bass_note is not None:
-                        self._synth.noteoff(self._bass["channel"], self._bass_note)
-                    self._synth.noteon(
-                        self._bass["channel"], bass_note, self._bass["velocity"],
-                    )
-                    self._bass_note = bass_note
-                    self._bass_last_noteon = now
+                return
+            bass_note = chord.root
+            if bass_note != self._bass_note:
+                if self._bass_note is not None:
+                    self._synth.noteoff(self._bass["channel"], self._bass_note)
+                self._synth.noteon(
+                    self._bass["channel"], bass_note, self._bass["velocity"],
+                )
+                self._bass_note = bass_note
+                self._bass_last_noteon = now
 
     def close(self) -> None:
         """Release all held notes and send All Notes Off."""

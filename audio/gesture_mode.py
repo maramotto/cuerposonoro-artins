@@ -52,7 +52,7 @@ class _VoiceTracker:
         self.last_direction = 0  # -1 = up, +1 = down, 0 = none
         self.frames_active = 0
         self.frames_silent = 0
-        self.last_noteon_time = 0.0
+        self.last_noteon_time = -1e9  # ensure first note is never blocked by cooldown
 
 
 class GestureMidiMode:

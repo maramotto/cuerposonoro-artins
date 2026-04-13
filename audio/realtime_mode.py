@@ -42,7 +42,7 @@ class _KeypointTracker:
         self.frames_above = 0
         self.frames_below = 0
         self.active_note: int | None = None
-        self.last_noteon_time = 0.0
+        self.last_noteon_time = -1e9  # ensure first note is never blocked by cooldown
 
 
 class RealtimeMidiMode:

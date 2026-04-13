@@ -7,6 +7,7 @@ Each tracked keypoint (wrists, ankles) maps to its own pitch range.
 from __future__ import annotations
 
 import logging
+import time
 
 import numpy as np
 
@@ -31,7 +32,7 @@ class _KeypointTracker:
 
     __slots__ = (
         "index", "channel", "notes", "frames_above", "frames_below",
-        "active_note",
+        "active_note", "last_noteon_time",
     )
 
     def __init__(self, index: int, channel: int, note_min: int, note_max: int) -> None:
@@ -41,6 +42,7 @@ class _KeypointTracker:
         self.frames_above = 0
         self.frames_below = 0
         self.active_note: int | None = None
+        self.last_noteon_time = 0.0
 
 
 class RealtimeMidiMode:
@@ -55,6 +57,7 @@ class RealtimeMidiMode:
         self._velocity_max = rt["velocity_max"]
         self._vel_min = rt["midi_velocity_min"]
         self._vel_max = rt["midi_velocity_max"]
+        self._cooldown_s = rt.get("note_cooldown_ms", 0) / 1000.0
 
         self._trackers: list[_KeypointTracker] = []
         for _name, kp_cfg in rt["keypoints"].items():
@@ -90,14 +93,19 @@ class RealtimeMidiMode:
 
         # Hysteresis: trigger note after N consecutive frames above threshold
         if t.frames_above >= self._hysteresis_frames:
-            note = self._velocity_to_note(velocity, t.notes)
-            midi_vel = self._velocity_to_midi_velocity(velocity)
+            now = time.monotonic()
+            if self._cooldown_s > 0 and (now - t.last_noteon_time) < self._cooldown_s:
+                pass  # skip — cooldown active
+            else:
+                note = self._velocity_to_note(velocity, t.notes)
+                midi_vel = self._velocity_to_midi_velocity(velocity)
 
-            if note != t.active_note:
-                if t.active_note is not None:
-                    self._synth.noteoff(t.channel, t.active_note)
-                self._synth.noteon(t.channel, note, midi_vel)
-                t.active_note = note
+                if note != t.active_note:
+                    if t.active_note is not None:
+                        self._synth.noteoff(t.channel, t.active_note)
+                    self._synth.noteon(t.channel, note, midi_vel)
+                    t.active_note = note
+                    t.last_noteon_time = now
 
         # Silence: release note after N consecutive frames below threshold
         if t.frames_below >= self._silence_frames and t.active_note is not None:
@@ -116,13 +124,8 @@ class RealtimeMidiMode:
         return notes[idx]
 
     def _velocity_to_midi_velocity(self, velocity: float) -> int:
-        """Map movement velocity to MIDI velocity (attack strength)."""
-        midi_vel = int(np.interp(
-            velocity,
-            [self._min_velocity, self._velocity_max],
-            [self._vel_min, self._vel_max],
-        ))
-        return max(0, min(127, midi_vel))
+        """Return maximum MIDI velocity (attack strength)."""
+        return 127
 
     def close(self) -> None:
         """Release all held notes and send All Notes Off."""

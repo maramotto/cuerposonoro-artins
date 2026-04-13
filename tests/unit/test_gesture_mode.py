@@ -30,24 +30,33 @@ def _config(cooldown_ms: int = 150) -> dict:
     }
 
 
-def _moving_landmarks(dy: float = -0.05) -> Landmarks:
-    """Create landmarks with vertical movement (dy < 0 = upward)."""
-    kp1 = np.zeros((17, 3), dtype=np.float32)
-    kp1[:, 2] = 1.0
-    kp1[10] = [0.5, 0.5, 1.0]  # right wrist
-    kp1[8] = [0.5, 0.4, 1.0]   # right elbow
-    kp1[9] = [0.3, 0.5, 1.0]   # left wrist
-    kp1[7] = [0.3, 0.4, 1.0]   # left elbow
-    kp1[11] = [0.4, 0.6, 1.0]  # left hip
-    kp1[12] = [0.6, 0.6, 1.0]  # right hip
+def _make_landmarks_stream(dy: float, n_frames: int) -> list[Landmarks]:
+    """Create a stream of landmarks with consistent vertical movement.
 
-    kp2 = kp1.copy()
-    for i in [7, 8, 9, 10, 11, 12]:
-        kp2[i, 1] += dy
+    Returns a single Landmarks object updated across n_frames, simulating
+    consecutive frames from the same person. Each frame moves keypoints
+    by dy in the y-axis.
+    """
+    kp = np.zeros((17, 3), dtype=np.float32)
+    kp[:, 2] = 1.0
+    kp[10] = [0.5, 0.5, 1.0]  # right wrist
+    kp[8] = [0.5, 0.4, 1.0]   # right elbow
+    kp[9] = [0.3, 0.5, 1.0]   # left wrist
+    kp[7] = [0.3, 0.4, 1.0]   # left elbow
+    kp[11] = [0.4, 0.6, 1.0]  # left hip
+    kp[12] = [0.6, 0.6, 1.0]  # right hip
 
-    lm = Landmarks(kp1)
-    lm.update(kp2)
-    return lm
+    lm = Landmarks(kp.copy())
+    frames = [lm]
+
+    for i in range(1, n_frames):
+        next_kp = kp.copy()
+        for idx in [7, 8, 9, 10, 11, 12]:
+            next_kp[idx, 1] += dy * i
+        lm.update(next_kp)
+        frames.append(lm)
+
+    return frames
 
 
 class TestGestureModeCooldown:
@@ -56,8 +65,8 @@ class TestGestureModeCooldown:
         synth = MagicMock()
         mode = GestureMidiMode(synth=synth, config=_config(cooldown_ms=500))
 
-        for _ in range(3):
-            lm = _moving_landmarks(dy=-0.05)
+        frames = _make_landmarks_stream(dy=-0.05, n_frames=4)
+        for lm in frames:
             mode.update(lm)
 
         assert synth.noteon.called
@@ -67,13 +76,16 @@ class TestGestureModeCooldown:
         synth = MagicMock()
         mode = GestureMidiMode(synth=synth, config=_config(cooldown_ms=500))
 
-        for _ in range(3):
-            mode.update(_moving_landmarks(dy=-0.05))
+        frames = _make_landmarks_stream(dy=-0.05, n_frames=4)
+        for lm in frames:
+            mode.update(lm)
 
         first_count = synth.noteon.call_count
 
-        for _ in range(3):
-            mode.update(_moving_landmarks(dy=0.05))
+        # Reverse direction — still within cooldown
+        frames2 = _make_landmarks_stream(dy=0.05, n_frames=4)
+        for lm in frames2:
+            mode.update(lm)
 
         assert synth.noteon.call_count == first_count
 
@@ -82,16 +94,18 @@ class TestGestureModeCooldown:
         synth = MagicMock()
         mode = GestureMidiMode(synth=synth, config=_config(cooldown_ms=50))
 
-        for _ in range(3):
-            mode.update(_moving_landmarks(dy=-0.05))
+        frames = _make_landmarks_stream(dy=-0.05, n_frames=4)
+        for lm in frames:
+            mode.update(lm)
 
         first_count = synth.noteon.call_count
         assert first_count > 0
 
         time.sleep(0.06)
 
-        for _ in range(3):
-            mode.update(_moving_landmarks(dy=0.05))
+        frames2 = _make_landmarks_stream(dy=0.05, n_frames=4)
+        for lm in frames2:
+            mode.update(lm)
 
         assert synth.noteon.call_count > first_count
 
@@ -100,7 +114,8 @@ class TestGestureModeCooldown:
         synth = MagicMock()
         mode = GestureMidiMode(synth=synth, config=_config(cooldown_ms=0))
 
-        for _ in range(6):
-            mode.update(_moving_landmarks(dy=-0.05))
+        frames = _make_landmarks_stream(dy=-0.05, n_frames=6)
+        for lm in frames:
+            mode.update(lm)
 
         assert synth.noteon.call_count >= 2

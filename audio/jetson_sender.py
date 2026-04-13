@@ -42,8 +42,8 @@ class JetsonMidiSender:
         self._ankle_frames_above = 0
 
         # Cooldown timestamps
-        self._melody_last_noteon = 0.0
-        self._bass_last_noteon = 0.0
+        self._melody_last_noteon = -1e9  # ensure first note is never blocked
+        self._bass_last_noteon = -1e9
 
         # Silence tracking
         self._still_since: float | None = None

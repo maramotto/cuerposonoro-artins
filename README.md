@@ -32,7 +32,7 @@ by design.
 Camera → YOLOv8-Pose (TensorRT) → Landmark extraction
   → Feature analysis (arms, legs, harmony)
     → pyfluidsynth API → Fluidsynth synth (in-process)
-      → PulseAudio → Focusrite Scarlett 2i2 → Speakers
+      → PulseAudio → Bluetooth A2DP (ZK502-C) → Speakers
 ```
 
 End-to-end latency target: **under 80ms** (camera frame to audible sound).
@@ -43,7 +43,7 @@ End-to-end latency target: **under 80ms** (camera frame to audible sound).
 |---|---|
 | Compute | NVIDIA Jetson Orin Nano 8GB, JetPack 6.1, CUDA 12.6, TensorRT 10.3 |
 | Camera | Logitech C922 (USB), appears as `/dev/video0` |
-| Audio interface | Focusrite Scarlett 2i2 (USB) |
+| Audio output | Bluetooth A2DP speaker (ZK502-C), auto-connected at boot |
 | Amplifier | TPA3116D2 |
 | Speakers | Visaton FRS 13 (8 ohm) |
 | Power | Single power strip for all components |
@@ -52,10 +52,23 @@ End-to-end latency target: **under 80ms** (camera frame to audible sound).
 
 ```
 Camera USB ──→ Jetson USB port
-Scarlett 2i2 USB ──→ Jetson USB port
-Jetson (PulseAudio) ──→ Scarlett 2i2 ──→ TPA3116D2 amplifier ──→ Speakers
-Power strip ──→ Jetson + Scarlett + Amplifier
+Jetson (PulseAudio) ──→ Bluetooth A2DP ──→ ZK502-C ──→ TPA3116D2 amplifier ──→ Speakers
+Power strip ──→ Jetson + Amplifier
 ```
+
+## MIDI modes
+
+The `--midi-mode` flag selects how body movement maps to MIDI:
+
+| Mode | Description | Scale/Harmony |
+|---|---|---|
+| `gesture` | Direction-based, 3 voices (default). Upward arm gesture = ascending notes, energy = volume, duration = articulation. | D dorian |
+| `realtime` | Per-keypoint velocity-driven. Each tracked keypoint (wrists, ankles) maps to its own pitch range. | D minor pentatonic |
+| `jetson` | Velocity-driven with hysteresis and sustained notes. Notes hold while movement continues. | D minor chord progression |
+| `musical` | Per-frame note triggers. Original mode with silence tracking and chord harmony. | D minor chord progression |
+
+All modes share the same detection loop and person tracking. Adding a new mode
+requires only implementing a class with `update(landmarks)` and `close()`.
 
 ## Quick start (Jetson — first time)
 
@@ -103,14 +116,17 @@ python main.py
 ### Command-line flags
 
 ```bash
-python main.py --mode midi --midi-mode musical          # defaults
-python main.py --config path/to/other_config.yaml       # custom config
+python main.py --mode midi --midi-mode gesture       # defaults
+python main.py --midi-mode musical                    # per-frame note triggers
+python main.py --midi-mode realtime                   # per-keypoint velocity
+python main.py --midi-mode jetson                     # sustained notes
+python main.py --config path/to/other_config.yaml     # custom config
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--mode` | `midi` | Audio engine mode |
-| `--midi-mode` | `musical` | MIDI mapping strategy |
+| `--midi-mode` | `gesture` | MIDI mapping strategy (see MIDI modes above) |
 | `--config` | `config.yaml` | Path to configuration file |
 
 ## Deployment
@@ -133,12 +149,16 @@ sudo systemctl restart cuerposonoro
 The installation starts automatically when the Jetson is powered on:
 
 1. **Hardware:** The Jetson Orin Nano boots on DC power (default behaviour).
-2. **Startup script** (`deployment/start_cuerposonoro.sh`):
+2. **Bluetooth service** (`deployment/bt-zk502.service`):
+   - Runs as user `maramotto` at login
+   - Waits for BlueZ, connects ZK502-C, sets it as default PulseAudio sink
+3. **Startup script** (`deployment/start_cuerposonoro.sh`):
    - Activates the Python venv
    - Waits up to 30s for the camera (`/dev/video0`)
    - Waits up to 30s for PulseAudio
-   - Launches `main.py`
-3. **systemd service** (`deployment/cuerposonoro.service`):
+   - Waits up to 60s for Bluetooth A2DP sink (falls back to default if unavailable)
+   - Launches `main.py --midi-mode gesture`
+4. **systemd service** (`deployment/cuerposonoro.service`):
    - Runs as user `maramotto`
    - Restarts automatically on any crash (10s delay)
    - Routes logs to both journald and `logs/cuerposonoro.log`
@@ -232,7 +252,7 @@ All tunable parameters live in `config.yaml`. No magic numbers in code.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `velocity_threshold` | `0.02` | Body velocity below this is considered "still" |
+| `velocity_threshold` | `0.008` | Body velocity below this is considered "still" |
 | `timeout_ms` | `500` | Milliseconds of stillness before both channels go silent |
 
 ### `melody` (vibraphone, MIDI channel 1)
@@ -245,8 +265,9 @@ All tunable parameters live in `config.yaml`. No magic numbers in code.
 | `note_max` | `84` | Highest MIDI note (C6) |
 | `velocity_min` | `30` | Minimum MIDI velocity for soft arm movement |
 | `velocity_max` | `120` | Maximum MIDI velocity for fast arm movement |
-| `trigger_threshold` | `0.03` | Arm velocity needed to trigger a note |
+| `trigger_threshold` | `0.018` | Arm velocity needed to trigger a note |
 | `brightness_cc` | `74` | MIDI CC number for timbre brightness (wrist separation) |
+| `note_cooldown_ms` | `150` | Minimum ms between note-on events (rate limiter) |
 
 ### `bass` (acoustic bass, MIDI channel 2)
 
@@ -254,7 +275,7 @@ All tunable parameters live in `config.yaml`. No magic numbers in code.
 |---|---|---|
 | `channel` | `1` | MIDI channel (0-indexed, displays as channel 2) |
 | `program` | `32` | GM program number (acoustic bass pizzicato) |
-| `trigger_threshold` | `0.03` | Ankle velocity needed to trigger a bass note |
+| `trigger_threshold` | `0.018` | Ankle velocity needed to trigger a bass note |
 | `velocity` | `100` | Fixed bass note velocity |
 
 ### `harmony`
@@ -270,9 +291,15 @@ All tunable parameters live in `config.yaml`. No magic numbers in code.
 | Parameter | Default | Description |
 |---|---|---|
 | `soundfont` | `JJazzLab-SoundFont.sf2` | Path to the SF2 soundfont file |
-| `gain` | `0.8` | Master volume (0.0–1.0) |
+| `gain` | `2.0` | Master volume |
 | `sample_rate` | `44100` | Audio sample rate in Hz |
-| `driver` | `coreaudio` | Audio driver: `coreaudio` on Mac, `pulseaudio` on Jetson |
+| `driver` | `pulseaudio` | Audio driver: `coreaudio` on Mac, `pulseaudio` on Jetson |
+
+### Mode-specific configuration
+
+Each MIDI mode has its own config section (`gesture`, `realtime`, `jetson`).
+The `musical` mode uses `melody`, `bass`, `harmony`, and `silence` sections
+directly. See `config.yaml` for the full reference with inline comments.
 
 ## Project structure
 
@@ -284,26 +311,35 @@ cuerposonoro-jetson/
   requirements.txt        # Python dependencies
   config.yaml             # All tunable parameters
 
-  main.py                 # Entry point — wires vision, features, and audio
+  main.py                 # Entry point — shared detection loop, mode dispatch
 
   vision/
     detector.py           # YOLOv8-Pose wrapper (TensorRT or CPU)
     landmarks.py          # Landmark extraction, normalisation, velocity
+    capture.py            # Webcam wrapper (cv2.VideoCapture)
 
   features/
     arms.py               # Melody descriptors (wrist height, arm velocity, brightness)
-    legs.py               # Rhythm descriptors (ankle velocity, knee height)
+    legs.py               # Rhythm descriptors (ankle velocity)
     harmony.py            # Torso/head tilt → chord progression control
+    silence.py            # Silence detection (velocity below threshold for timeout)
 
   audio/
     chords.py             # Chord voicings, note selection, tension/simplification
     fluidsynth.py         # In-process Fluidsynth synth via pyfluidsynth
     midi.py               # MIDI note/CC output via pyfluidsynth direct API
+    platform.py           # Factory for platform-aware Fluidsynth setup
+    musical_mode.py       # Musical mode: per-frame triggers, chord progression
+    gesture_mode.py       # Gesture mode: direction-based, 3 voices, Re dorian
+    realtime_mode.py      # Realtime mode: per-keypoint velocity, D minor pentatonic
+    jetson_sender.py      # Jetson mode: velocity-driven, sustained notes
 
   deployment/
     cuerposonoro.service  # systemd unit file (auto-start, watchdog)
     start_cuerposonoro.sh # Startup script (venv, device waits, logging)
     setup_jetson.sh       # One-time Jetson setup (packages, venv, soundfont, TensorRT)
+    bt-zk502.service      # systemd user service for Bluetooth A2DP auto-connect
+    bt-zk502-connect.sh   # Bluetooth connection script (ZK502-C speaker)
 
   docs/
     deployment/
@@ -321,13 +357,21 @@ cuerposonoro-jetson/
 
 1. Check Fluidsynth is running: `journalctl -u cuerposonoro -b | grep -i fluid`
 2. Check PulseAudio: `sudo -u maramotto pactl list sinks short`
-3. Check the Scarlett 2i2 is detected: `sudo -u maramotto pactl list sinks short | grep -i scarlett`
+3. Check Bluetooth speaker: `bluetoothctl info E2:70:F5:E3:73:FC`
+4. Check the default sink: `sudo -u maramotto pactl get-default-sink`
 
 ### Camera not found
 
 1. Check the camera is connected: `ls /dev/video*`
 2. Check device details: `v4l2-ctl --list-devices`
 3. The startup script waits 30s for `/dev/video0` — if it times out, the service restarts after 10s
+
+### Bluetooth speaker not connecting
+
+1. Check BlueZ is powered on: `bluetoothctl show | grep Powered`
+2. Check device is trusted: `bluetoothctl info E2:70:F5:E3:73:FC | grep Trusted`
+3. Check the Bluetooth service: `systemctl --user status bt-zk502`
+4. The startup script continues with the default sink if Bluetooth is unavailable after 60s
 
 ### Service keeps restarting
 

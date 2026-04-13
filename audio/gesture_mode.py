@@ -10,12 +10,20 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Callable, NamedTuple
 
 import numpy as np
 
 from vision.landmarks import Landmarks
 
 log = logging.getLogger(__name__)
+
+
+class _DeferredAction(NamedTuple):
+    """A MIDI action scheduled to execute after a number of frames."""
+    frames_remaining: int
+    action: Callable[[], None]
+
 
 # D dorian pitch classes: D E F G A B C
 _D_DORIAN_PC = {0, 2, 4, 5, 7, 9, 11}
@@ -82,8 +90,7 @@ class GestureMidiMode:
             for name, indices, ch, nmin, nmax in self._VOICE_DEFS
         ]
 
-        # Deferred actions: list of (frames_remaining, callable)
-        self._deferred: list[list] = []
+        self._deferred: list[_DeferredAction] = []
 
         # Set MIDI programs
         programs = gc["programs"]
@@ -200,7 +207,7 @@ class GestureMidiMode:
             # Sustained: add reverb before releasing
             self._synth.cc(channel, 91, self._reverb_cc91)
             # Defer noteoff by 2 frames
-            self._deferred.append([2, lambda ch=channel, n=note: self._synth.noteoff(ch, n)])
+            self._deferred.append(_DeferredAction(2, lambda ch=channel, n=note: self._synth.noteoff(ch, n)))
         else:
             # Staccato: immediate release
             self._synth.noteoff(channel, note)
@@ -224,11 +231,10 @@ class GestureMidiMode:
         """Decrement deferred action counters and execute when ready."""
         remaining = []
         for entry in self._deferred:
-            entry[0] -= 1
-            if entry[0] <= 0:
-                entry[1]()
+            if entry.frames_remaining <= 1:
+                entry.action()
             else:
-                remaining.append(entry)
+                remaining.append(_DeferredAction(entry.frames_remaining - 1, entry.action))
         self._deferred = remaining
 
     def close(self) -> None:
@@ -242,7 +248,7 @@ class GestureMidiMode:
 
         # Execute any deferred actions
         for entry in self._deferred:
-            entry[1]()
+            entry.action()
         self._deferred.clear()
 
         for ch in channels_seen:
